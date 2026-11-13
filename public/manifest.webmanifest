@@ -1,0 +1,19 @@
+{
+  "name": "Song Starter",
+  "short_name": "Song Starter",
+  "description": "Songs, events, and starting pitches in one simple place.",
+  "theme_color": "#f5f4ef",
+  "background_color": "#f5f4ef",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "./",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
