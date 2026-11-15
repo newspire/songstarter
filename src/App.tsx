@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import QRCode from "qrcode";
 import {
   formatShift,
   getNoteChoices,
@@ -707,13 +708,71 @@ function EventManager({
   );
 }
 
+function AboutPage() {
+  const websiteUrl = "https://newspire.github.io/songstarter/";
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(websiteUrl, {
+      width: 192,
+      margin: 2,
+      color: { dark: "#23332f", light: "#fffefa" }
+    }).then((dataUrl) => {
+      if (!cancelled) setQrCode(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setQrError("The QR code could not be generated. You can still share the link below.");
+    });
+    return () => { cancelled = true; };
+  }, [websiteUrl]);
+
+  return (
+    <section className="about-page" aria-labelledby="about-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">ABOUT SONG STARTER</p>
+          <h2 id="about-title">Made for music leaders</h2>
+        </div>
+      </div>
+      <p className="section-intro">Keep your songs, events, and starting pitches ready wherever you lead.</p>
+      <div className="about-card">
+        <div className="about-details">
+          <div className="about-owner">
+            <p className="eyebrow">CREATED BY</p>
+            <h3>Andy Yates</h3>
+          </div>
+          <div className="about-contact">
+            <span className="about-label">Contact</span>
+            <a href="mailto:newspire@gmail.com">newspire@gmail.com</a>
+          </div>
+          <p className="about-copyright">© {new Date().getFullYear()} Andy Yates. All rights reserved.</p>
+          <p className="about-version">Version {__APP_VERSION__}</p>
+        </div>
+        <div className="about-share">
+          <h3>Share Song Starter</h3>
+          <p>Scan this code to open the app on your phone.</p>
+          <a className="about-url" href={websiteUrl}>{websiteUrl}</a>
+          <div className="about-qr">
+            {qrCode
+              ? <img src={qrCode} alt={`QR code linking to ${websiteUrl}`} width="192" height="192" />
+              : qrError
+                ? <p role="alert">{qrError}</p>
+                : <p aria-live="polite">Creating QR code…</p>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [initialData] = useState(readStoredData);
   const [data, setData] = useState<AppData>(initialData.data);
   const [storageError, setStorageError] = useState(initialData.error);
   const [storageBlocked, setStorageBlocked] = useState(Boolean(initialData.error));
   const [needsReset, setNeedsReset] = useState(Boolean(initialData.error));
-  const [tab, setTab] = useState<"songs" | "events">("songs");
+  const [tab, setTab] = useState<"songs" | "events" | "about">("songs");
   const [editingSong, setEditingSong] = useState<Song | null | undefined>(undefined);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -828,7 +887,7 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true">♫</div>
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-192.png`} alt="" />
           <div className="brand-copy">
             <h1>Song Starter</h1>
             <p>Your songs, ready to lead.</p>
@@ -861,11 +920,14 @@ export default function App() {
 
       <main className="main-content">
         <nav className="main-tabs" aria-label="Main sections">
-          <button className={tab === "songs" ? "active" : ""} onClick={() => { setTab("songs"); setEditingSong(undefined); }}>
+          <button type="button" className={tab === "songs" ? "active" : ""} onClick={() => { setTab("songs"); setEditingSong(undefined); }}>
             <span aria-hidden="true">♫</span> Songs <span className="tab-count">{data.songs.length}</span>
           </button>
-          <button className={tab === "events" ? "active" : ""} onClick={() => { setTab("events"); setEditingSong(undefined); }}>
+          <button type="button" className={tab === "events" ? "active" : ""} onClick={() => { setTab("events"); setEditingSong(undefined); }}>
             <span aria-hidden="true">▦</span> Events <span className="tab-count">{data.events.length}</span>
+          </button>
+          <button type="button" className={tab === "about" ? "active" : ""} onClick={() => { setTab("about"); setEditingSong(undefined); }}>
+            <span aria-hidden="true">ⓘ</span> About
           </button>
         </nav>
 
@@ -914,6 +976,8 @@ export default function App() {
             onPlay={playNotes}
           />
         )}
+
+        {tab === "about" && <AboutPage />}
       </main>
       <footer className="app-footer">
         <span>Saved on this device</span>

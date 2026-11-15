@@ -84,7 +84,6 @@ summary:focus-visible {
   min-width: 0;
 }
 
-.brand-mark,
 .song-note-icon {
   display: grid;
   flex: 0 0 auto;
@@ -96,10 +95,11 @@ summary:focus-visible {
 }
 
 .brand-mark {
+  display: block;
+  flex: 0 0 auto;
   width: 47px;
   height: 47px;
   border-radius: 15px;
-  font-size: 26px;
 }
 
 .brand-copy {
@@ -191,7 +191,7 @@ summary:focus-visible {
 
 .main-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
   margin: 0 0 34px;
   padding: 5px;
@@ -257,6 +257,101 @@ summary:focus-visible {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.about-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr);
+  gap: 28px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.about-details {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.about-owner h3,
+.about-share h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.about-owner .eyebrow {
+  margin-bottom: 7px;
+}
+
+.about-contact {
+  display: grid;
+  gap: 5px;
+}
+
+.about-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.about-contact a,
+.about-url {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.about-copyright,
+.about-version,
+.about-share p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.about-details .about-version {
+  margin-top: -14px;
+  font-size: 11px;
+}
+
+.about-share {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 10px;
+}
+
+.about-share h3 {
+  font-size: 16px;
+}
+
+.about-qr {
+  display: grid;
+  min-width: 192px;
+  min-height: 192px;
+  place-items: center;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.about-qr img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.about-qr p {
+  max-width: 192px;
 }
 
 .song-search {
@@ -1202,6 +1297,12 @@ summary:focus-visible {
 
   .main-tabs {
     margin-bottom: 27px;
+  }
+
+  .about-card {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 19px;
   }
 
   .section-heading h2 {
