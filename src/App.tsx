@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import QRCode from "qrcode";
 import {
+  describeNote,
   formatShift,
+  formatNoteName,
+  getKeyOption,
   getNoteChoices,
+  getPreferredNoteSpelling,
   keySignatureMarks,
   noteName,
   staffPosition,
@@ -12,7 +16,7 @@ import {
   VOICE_RANGES
 } from "./music";
 import { EMPTY_APP_DATA, VOICES, VOICE_LABELS } from "./types";
-import type { AppData, Mode, MusicEvent, Song, VoicePart } from "./types";
+import type { AppData, Mode, MusicEvent, NoteSpelling, Song, VoicePart } from "./types";
 
 const STORAGE_KEY = "song-starter-data-v1";
 const FLAT_GLYPH_NUDGE = -3;
@@ -41,7 +45,8 @@ function isAppData(value: unknown): value is AppData {
       typeof song.shift === "number" &&
       song.notes !== null &&
       typeof song.notes === "object" &&
-      VOICES.every((voice) => song.notes[voice] === null || typeof song.notes[voice] === "number")
+      VOICES.every((voice) => song.notes[voice] === null || typeof song.notes[voice] === "number") &&
+      (song.noteSpellings === undefined || isSongNoteSpellings(song.noteSpellings))
     ) &&
     data.events.every((event) =>
       typeof event.id === "string" &&
@@ -50,6 +55,58 @@ function isAppData(value: unknown): value is AppData {
       event.songIds.every((id) => typeof id === "string")
     )
   );
+}
+
+function isNoteSpelling(value: unknown): value is NoteSpelling {
+  if (!value || typeof value !== "object") return false;
+  const spelling = value as Partial<NoteSpelling>;
+  return (
+    ["A", "B", "C", "D", "E", "F", "G"].includes(spelling.letter ?? "") &&
+    Number.isInteger(spelling.octave) &&
+    (spelling.accidental === null || spelling.accidental === "natural" || spelling.accidental === "flat" || spelling.accidental === "sharp")
+  );
+}
+
+function isSongNoteSpellings(value: unknown): value is Record<VoicePart, NoteSpelling | null> {
+  if (!value || typeof value !== "object") return false;
+  const spellings = value as Record<VoicePart, unknown>;
+  return VOICES.every((voice) => spellings[voice] === null || isNoteSpelling(spellings[voice]));
+}
+
+function getNoteLabel(
+  midi: number | null,
+  spelling: NoteSpelling | null,
+  voice: VoicePart,
+  signature: number,
+  emptyLabel = "Not set"
+): string {
+  if (midi === null) return emptyLabel;
+  return formatNoteName(getPreferredNoteSpelling(midi, voice, signature, spelling), signature);
+}
+
+function getSongNoteLabel(song: Song, voice: VoicePart): string {
+  return getNoteLabel(
+    song.notes[voice],
+    song.noteSpellings?.[voice] ?? null,
+    voice,
+    getKeyOption(song.tonic, song.mode).signature,
+    "—"
+  );
+}
+
+function getInitialNoteSpellings(song: Song | null, signature: number): Record<VoicePart, NoteSpelling | null> {
+  function getSpelling(voice: VoicePart): NoteSpelling | null {
+    const midi = song?.notes[voice];
+    if (!song || midi === null || midi === undefined) return null;
+    return getPreferredNoteSpelling(midi, voice, signature, song.noteSpellings?.[voice]);
+  }
+
+  return {
+    soprano: getSpelling("soprano"),
+    alto: getSpelling("alto"),
+    tenor: getSpelling("tenor"),
+    bass: getSpelling("bass")
+  };
 }
 
 function readStoredData(): StoredDataResult {
@@ -103,8 +160,16 @@ function KeySignatureGraphic({ signature }: { signature: number }) {
   );
 }
 
-function StaffNote({ midi, clef }: { midi: number | null; clef: "treble" | "bass" }) {
-  const position = midi === null ? null : staffPosition(midi, clef);
+function StaffNote({
+  spelling,
+  clef,
+  signature
+}: {
+  spelling: NoteSpelling | null;
+  clef: "treble" | "bass";
+  signature: number;
+}) {
+  const position = spelling === null ? null : staffPosition(spelling, clef, signature);
   const ledgerSteps: number[] = [];
   if (position) {
     for (let step = 10; step <= position.step; step += 2) ledgerSteps.push(step);
@@ -116,7 +181,7 @@ function StaffNote({ midi, clef }: { midi: number | null; clef: "treble" | "bass
       className="staff-note"
       viewBox="0 0 80 120"
       role="img"
-      aria-label={midi === null ? "No starting note selected" : `${noteName(midi)} on the ${clef} staff`}
+      aria-label={spelling === null ? "No starting note selected" : `${describeNote(spelling, signature)} on the ${clef} staff`}
     >
       {[68, 76, 84, 92, 100].map((y) => (
         <line key={y} x1="8" x2="72" y1={y} y2={y} className="staff-line" />
@@ -189,12 +254,29 @@ function SongEditor({
   const [notes, setNotes] = useState<Record<VoicePart, number | null>>(
     song?.notes ?? { soprano: null, alto: null, tenor: null, bass: null }
   );
+  const [noteSpellings, setNoteSpellings] = useState<Record<VoicePart, NoteSpelling | null>>(
+    () => getInitialNoteSpellings(song, getKeyOption(song?.tonic ?? "C", song?.mode ?? "major").signature)
+  );
   const [shift, setShift] = useState(song?.shift ?? 0);
   const keyOptions = KEY_OPTIONS[mode];
+  const signature = getKeyOption(tonic, mode).signature;
+
+  function changeKey(nextMode: Mode, nextTonic: string) {
+    const nextSignature = getKeyOption(nextTonic, nextMode).signature;
+    setMode(nextMode);
+    setTonic(nextTonic);
+    setNoteSpellings((current) => {
+      const next = { ...current };
+      VOICES.forEach((voice) => {
+        const midi = notes[voice];
+        next[voice] = midi === null ? null : getPreferredNoteSpelling(midi, voice, nextSignature);
+      });
+      return next;
+    });
+  }
 
   function changeMode(nextMode: Mode) {
-    setMode(nextMode);
-    setTonic(nextMode === "major" ? "C" : "A");
+    changeKey(nextMode, nextMode === "major" ? "C" : "A");
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -207,6 +289,7 @@ function SongEditor({
       tonic,
       mode,
       notes,
+      noteSpellings,
       shift
     });
   }
@@ -248,7 +331,7 @@ function SongEditor({
               key={option.tonic}
               type="button"
               className={`key-choice${tonic === option.tonic ? " selected" : ""}`}
-              onClick={() => setTonic(option.tonic)}
+              onClick={() => changeKey(mode, option.tonic)}
               aria-pressed={tonic === option.tonic}
               aria-label={`${option.tonic} ${mode}`}
             >
@@ -262,7 +345,7 @@ function SongEditor({
 
       <div className="field-block">
         <span className="field-label">Starting notes</span>
-        <p className="helper-text">Tap the note that each voice begins on. Each note is labeled and shown on a staff.</p>
+        <p className="helper-text">Choose each note as written in the music. Key-signature notes and natural alternatives are shown correctly.</p>
         <div className="voice-pickers">
           {VOICES.map((voice) => {
             const clef = VOICE_RANGES[voice].clef;
@@ -271,35 +354,52 @@ function SongEditor({
                 <summary>
                   <span className="voice-summary-label">
                     <strong>{VOICE_LABELS[voice]}</strong>
-                    <span>{notes[voice] === null ? "Not set" : noteName(notes[voice])}</span>
+                    <span>{getNoteLabel(notes[voice], noteSpellings[voice], voice, signature)}</span>
                   </span>
-                  <StaffNote midi={notes[voice]} clef={clef} />
+                  <StaffNote spelling={noteSpellings[voice]} clef={clef} signature={signature} />
                   <span className="disclosure-mark" aria-hidden="true">⌄</span>
                 </summary>
                 <div className="note-grid" role="group" aria-label={`${VOICE_LABELS[voice]} starting note`}>
                   <button
                     type="button"
                     className={`note-choice note-choice-none${notes[voice] === null ? " selected" : ""}`}
-                    onClick={() => setNotes((current) => ({ ...current, [voice]: null }))}
+                    onClick={() => {
+                      setNotes((current) => ({ ...current, [voice]: null }));
+                      setNoteSpellings((current) => ({ ...current, [voice]: null }));
+                    }}
                     aria-pressed={notes[voice] === null}
                     aria-label={`No starting note for ${VOICE_LABELS[voice]}`}
                   >
                     <span className="note-none-mark" aria-hidden="true">—</span>
                     <span>Not set</span>
                   </button>
-                  {getNoteChoices(voice).map((midi) => (
-                    <button
-                      type="button"
-                      key={midi}
-                      className={`note-choice${notes[voice] === midi ? " selected" : ""}`}
-                      onClick={() => setNotes((current) => ({ ...current, [voice]: midi }))}
-                      aria-pressed={notes[voice] === midi}
-                      aria-label={`Choose ${noteName(midi)} for ${VOICE_LABELS[voice]}`}
-                    >
-                      <StaffNote midi={midi} clef={clef} />
-                      <span>{noteName(midi)}</span>
-                    </button>
-                  ))}
+                  {getNoteChoices(voice, signature).map((choice) => {
+                    const spelling: NoteSpelling = {
+                      letter: choice.letter,
+                      octave: choice.octave,
+                      accidental: choice.accidental
+                    };
+                    const selected = notes[voice] === choice.midi &&
+                      noteSpellings[voice]?.letter === choice.letter &&
+                      noteSpellings[voice]?.octave === choice.octave &&
+                      noteSpellings[voice]?.accidental === choice.accidental;
+                    return (
+                      <button
+                        type="button"
+                        key={`${choice.midi}-${choice.letter}-${choice.octave}-${choice.accidental ?? "none"}`}
+                        className={`note-choice${selected ? " selected" : ""}`}
+                        onClick={() => {
+                          setNotes((current) => ({ ...current, [voice]: choice.midi }));
+                          setNoteSpellings((current) => ({ ...current, [voice]: spelling }));
+                        }}
+                        aria-pressed={selected}
+                        aria-label={`Choose ${describeNote(spelling, signature)} for ${VOICE_LABELS[voice]}`}
+                      >
+                        <StaffNote spelling={spelling} clef={clef} signature={signature} />
+                        <span>{formatNoteName(spelling, signature)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </details>
             );
@@ -347,7 +447,10 @@ function SongList({
       song.title,
       song.tonic,
       song.mode,
-      ...VOICES.map((voice) => song.notes[voice]).filter((midi): midi is number => midi !== null).map(noteName)
+      ...VOICES.flatMap((voice) => {
+        const midi = song.notes[voice];
+        return midi === null ? [] : [getSongNoteLabel(song, voice), noteName(midi)];
+      })
     ].join(" ").toLocaleLowerCase().replace(/♭/g, "b").replace(/♯/g, "#");
     return searchableText.includes(normalizedSearch);
   });
@@ -395,7 +498,7 @@ function SongList({
                         <span className="song-note-icon" aria-hidden="true">♫</span>
                         <div>
                           <h3>{song.title}</h3>
-                          <p>{song.tonic} {song.mode} · {VOICES.map((voice) => song.notes[voice] === null ? "—" : noteName(song.notes[voice])).join(" · ")}</p>
+                          <p>{song.tonic} {song.mode} · {VOICES.map((voice) => getSongNoteLabel(song, voice)).join(" · ")}</p>
                         </div>
                       </div>
                       <div className="card-actions">

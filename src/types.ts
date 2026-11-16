@@ -3,12 +3,22 @@ export const VOICES = ["soprano", "alto", "tenor", "bass"] as const;
 export type VoicePart = (typeof VOICES)[number];
 export type Mode = "major" | "minor";
 
+export type NoteLetter = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+export type NoteAccidental = "natural" | "flat" | "sharp";
+
+export interface NoteSpelling {
+  letter: NoteLetter;
+  octave: number;
+  accidental: NoteAccidental | null;
+}
+
 export interface Song {
   id: string;
   title: string;
   tonic: string;
   mode: Mode;
   notes: Record<VoicePart, number | null>;
+  noteSpellings?: Record<VoicePart, NoteSpelling | null>;
   shift: number;
 }
 
