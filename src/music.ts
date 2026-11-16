@@ -48,7 +48,7 @@ export const KEY_OPTIONS: Record<Mode, KeyOption[]> = {
 };
 
 export const VOICE_RANGES: Record<VoicePart, { min: number; max: number; clef: "treble" | "bass" }> = {
-  soprano: { min: 59, max: 81, clef: "treble" },
+  soprano: { min: 58, max: 81, clef: "treble" },
   alto: { min: 55, max: 74, clef: "treble" },
   tenor: { min: 48, max: 67, clef: "bass" },
   bass: { min: 40, max: 60, clef: "bass" }
