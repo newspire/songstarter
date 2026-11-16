@@ -345,7 +345,7 @@ function SongEditor({
 
       <div className="field-block">
         <span className="field-label">Starting notes</span>
-        <p className="helper-text">Choose each note as written in the music. Key-signature notes and natural alternatives are shown correctly.</p>
+        <p className="helper-text">Select each note as it appears in the score. The key signature will be applied. Sharps, flats, and naturals on the staff are only for accidentals.</p>
         <div className="voice-pickers">
           {VOICES.map((voice) => {
             const clef = VOICE_RANGES[voice].clef;
