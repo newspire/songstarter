@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import QRCode from "qrcode";
 import {
   describeNote,
@@ -16,13 +16,44 @@ import {
   VOICE_RANGES
 } from "./music";
 import { EMPTY_APP_DATA, VOICES, VOICE_LABELS } from "./types";
-import type { AppData, Mode, MusicEvent, NoteSpelling, Song, VoicePart } from "./types";
+import type { AppData, Mode, MusicEvent, NoteAccidental, NoteLetter, NoteSpelling, Song, VoicePart } from "./types";
 
 const STORAGE_KEY = "song-starter-data-v1";
+const BACKUP_FORMAT = "song-starter-backup";
+const BACKUP_VERSION = 1;
+const SONG_SHARE_VERSION = 1;
+const WEBSITE_URL = "https://newspire.github.io/songstarter/";
 const FLAT_GLYPH_NUDGE = -3;
+type RestoreMode = "replace" | "merge";
 
 interface StoredDataResult {
   data: AppData;
+  error: string | null;
+}
+
+interface SongStarterBackup {
+  format: typeof BACKUP_FORMAT;
+  version: typeof BACKUP_VERSION;
+  createdAt: string;
+  data: AppData;
+}
+
+type CompactAccidental = "n" | "b" | "s" | null;
+type CompactNoteSpelling = [NoteLetter, number, CompactAccidental] | null;
+
+interface SharedSongPayload {
+  v: typeof SONG_SHARE_VERSION;
+  i: string;
+  t: string;
+  k: string;
+  m: Mode;
+  n: Array<number | null>;
+  p: CompactNoteSpelling[];
+  x: number;
+}
+
+interface IncomingSongShare {
+  song: Song | null;
   error: string | null;
 }
 
@@ -30,25 +61,33 @@ interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function isAppData(value: unknown): value is AppData {
-  if (!value || typeof value !== "object") return false;
+  if (!isRecord(value)) return false;
   const data = value as Partial<AppData>;
   return (
     Array.isArray(data.songs) &&
     Array.isArray(data.events) &&
     typeof data.globalShift === "number" &&
+    Number.isFinite(data.globalShift) &&
     data.songs.every((song) =>
+      isRecord(song) &&
       typeof song.id === "string" &&
       typeof song.title === "string" &&
       typeof song.tonic === "string" &&
       (song.mode === "major" || song.mode === "minor") &&
+      KEY_OPTIONS[song.mode].some((option) => option.tonic === song.tonic) &&
       typeof song.shift === "number" &&
-      song.notes !== null &&
-      typeof song.notes === "object" &&
-      VOICES.every((voice) => song.notes[voice] === null || typeof song.notes[voice] === "number") &&
+      Number.isFinite(song.shift) &&
+      isRecord(song.notes) &&
+      VOICES.every((voice) => song.notes[voice] === null || (typeof song.notes[voice] === "number" && Number.isFinite(song.notes[voice]))) &&
       (song.noteSpellings === undefined || isSongNoteSpellings(song.noteSpellings))
     ) &&
     data.events.every((event) =>
+      isRecord(event) &&
       typeof event.id === "string" &&
       typeof event.name === "string" &&
       Array.isArray(event.songIds) &&
@@ -58,7 +97,7 @@ function isAppData(value: unknown): value is AppData {
 }
 
 function isNoteSpelling(value: unknown): value is NoteSpelling {
-  if (!value || typeof value !== "object") return false;
+  if (!isRecord(value)) return false;
   const spelling = value as Partial<NoteSpelling>;
   return (
     ["A", "B", "C", "D", "E", "F", "G"].includes(spelling.letter ?? "") &&
@@ -68,9 +107,147 @@ function isNoteSpelling(value: unknown): value is NoteSpelling {
 }
 
 function isSongNoteSpellings(value: unknown): value is Record<VoicePart, NoteSpelling | null> {
-  if (!value || typeof value !== "object") return false;
+  if (!isRecord(value)) return false;
   const spellings = value as Record<VoicePart, unknown>;
   return VOICES.every((voice) => spellings[voice] === null || isNoteSpelling(spellings[voice]));
+}
+
+function isSongStarterBackup(value: unknown): value is SongStarterBackup {
+  return isRecord(value) &&
+    value.format === BACKUP_FORMAT &&
+    value.version === BACKUP_VERSION &&
+    typeof value.createdAt === "string" &&
+    isAppData(value.data);
+}
+
+function decodeSharedSongPayload(value: unknown): Song | null {
+  if (
+    !isRecord(value) ||
+    value.v !== SONG_SHARE_VERSION ||
+    typeof value.i !== "string" ||
+    typeof value.t !== "string" ||
+    typeof value.k !== "string" ||
+    (value.m !== "major" && value.m !== "minor") ||
+    !Array.isArray(value.n) ||
+    value.n.length !== VOICES.length ||
+    !Array.isArray(value.p) ||
+    value.p.length !== VOICES.length ||
+    typeof value.x !== "number" ||
+    !Number.isFinite(value.x)
+  ) return null;
+
+  const notes = {} as Record<VoicePart, number | null>;
+  const noteSpellings = {} as Record<VoicePart, NoteSpelling | null>;
+  for (const [index, voice] of VOICES.entries()) {
+    const midi = value.n[index];
+    if (midi !== null && (typeof midi !== "number" || !Number.isFinite(midi))) return null;
+    notes[voice] = midi as number | null;
+
+    const compactSpelling = value.p[index];
+    if (compactSpelling === null) {
+      noteSpellings[voice] = null;
+      continue;
+    }
+    if (!Array.isArray(compactSpelling) || compactSpelling.length !== 3) return null;
+    const compactAccidental = compactSpelling[2];
+    let accidental: NoteAccidental | null;
+    if (compactAccidental === null) accidental = null;
+    else if (compactAccidental === "n") accidental = "natural";
+    else if (compactAccidental === "b") accidental = "flat";
+    else if (compactAccidental === "s") accidental = "sharp";
+    else return null;
+
+    const spelling: unknown = {
+      letter: compactSpelling[0],
+      octave: compactSpelling[1],
+      accidental
+    };
+    if (!isNoteSpelling(spelling)) return null;
+    noteSpellings[voice] = spelling;
+  }
+
+  const song: Song = {
+    id: value.i,
+    title: value.t,
+    tonic: value.k,
+    mode: value.m,
+    notes,
+    noteSpellings,
+    shift: value.x
+  };
+  return isAppData({ songs: [song], events: [], globalShift: 0 }) ? song : null;
+}
+
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64Url(value: string): string {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function createSongShareUrl(song: Song): string {
+  const payload: SharedSongPayload = {
+    v: SONG_SHARE_VERSION,
+    i: song.id,
+    t: song.title,
+    k: song.tonic,
+    m: song.mode,
+    n: VOICES.map((voice) => song.notes[voice]),
+    p: VOICES.map((voice) => {
+      const spelling = song.noteSpellings?.[voice];
+      if (!spelling) return null;
+      const accidental: CompactAccidental = spelling.accidental === "natural"
+        ? "n"
+        : spelling.accidental === "flat"
+          ? "b"
+          : spelling.accidental === "sharp"
+            ? "s"
+            : null;
+      return [spelling.letter, spelling.octave, accidental];
+    }),
+    x: song.shift
+  };
+  const url = new URL(WEBSITE_URL);
+  url.hash = `song=${encodeBase64Url(JSON.stringify(payload))}`;
+  return url.toString();
+}
+
+function readIncomingSongShare(): IncomingSongShare {
+  const encoded = new URLSearchParams(window.location.hash.slice(1)).get("song");
+  if (encoded === null) return { song: null, error: null };
+  try {
+    const parsed: unknown = JSON.parse(decodeBase64Url(encoded));
+    const song = decodeSharedSongPayload(parsed);
+    if (!song) {
+      return { song: null, error: "This shared song link is invalid or uses an unsupported version." };
+    }
+    return { song, error: null };
+  } catch {
+    return { song: null, error: "This shared song link could not be read." };
+  }
+}
+
+function mergeById<T extends { id: string }>(current: T[], imported: T[]): T[] {
+  const merged = new Map(current.map((item) => [item.id, item]));
+  imported.forEach((item) => merged.set(item.id, item));
+  return [...merged.values()];
+}
+
+function mergeAppData(current: AppData, imported: AppData): AppData {
+  return {
+    songs: mergeById(current.songs, imported.songs),
+    events: mergeById(current.events, imported.events),
+    globalShift: imported.globalShift
+  };
 }
 
 function getNoteLabel(
@@ -441,6 +618,7 @@ function SongList({
 }) {
   const [search, setSearch] = useState("");
   const [playingSongId, setPlayingSongId] = useState<string | null>(null);
+  const [sharingSongId, setSharingSongId] = useState<string | null>(null);
   const normalizedSearch = search.trim().toLocaleLowerCase().replace(/♭/g, "b").replace(/♯/g, "#");
   const filteredSongs = songs.filter((song) => {
     const searchableText = [
@@ -491,6 +669,7 @@ function SongList({
             <div className="song-list">
               {filteredSongs.map((song) => {
                 const isPlayingOpen = playingSongId === song.id;
+                const isSharingOpen = sharingSongId === song.id;
                 return (
                   <article className="song-library-card" key={song.id}>
                     <div className="song-library-top">
@@ -512,6 +691,15 @@ function SongList({
                           {isPlayingOpen ? "Hide" : "Play"}
                         </button>
                         <button type="button" className="text-button" onClick={() => onEdit(song)}>Edit</button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          aria-expanded={isSharingOpen}
+                          aria-controls={`song-share-${song.id}`}
+                          onClick={() => setSharingSongId(isSharingOpen ? null : song.id)}
+                        >
+                          {isSharingOpen ? "Hide share" : "Share"}
+                        </button>
                         <button type="button" className="text-button danger-text" onClick={() => onDelete(song)}>Remove</button>
                       </div>
                     </div>
@@ -519,6 +707,13 @@ function SongList({
                       <span>Song pitch</span>
                       <Stepper label={`${song.title} pitch`} value={song.shift} onChange={(shift) => onShift(song, shift)} compact />
                     </div>
+                    {isSharingOpen && (
+                      <SongSharePanel
+                        song={song}
+                        panelId={`song-share-${song.id}`}
+                        onClose={() => setSharingSongId(null)}
+                      />
+                    )}
                     {isPlayingOpen && (
                       <div className="library-playback-panel" id={`library-player-${song.id}`}>
                         <div className="library-play-summary">
@@ -536,6 +731,77 @@ function SongList({
         </>
       )}
     </section>
+  );
+}
+
+function SongSharePanel({
+  song,
+  panelId,
+  onClose
+}: {
+  song: Song;
+  panelId: string;
+  onClose: () => void;
+}) {
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const linkInput = useRef<HTMLInputElement>(null);
+  const shareUrl = createSongShareUrl(song);
+
+  useEffect(() => {
+    let cancelled = false;
+    setQrCode(null);
+    setQrError(null);
+    QRCode.toDataURL(shareUrl, {
+      width: 240,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: { dark: "#23332f", light: "#fffefa" }
+    }).then((dataUrl) => {
+      if (!cancelled) setQrCode(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setQrError("The QR code could not be created. You can still copy the song link.");
+    });
+    return () => { cancelled = true; };
+  }, [shareUrl]);
+
+  async function copyLink() {
+    setMessage(null);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setMessage("Song link copied.");
+    } catch {
+      linkInput.current?.focus();
+      linkInput.current?.select();
+      setMessage("Copying isn’t available here. The link is selected so you can copy it manually.");
+    }
+  }
+
+  return (
+    <div className="song-share-panel" id={panelId}>
+      <div className="song-share-heading">
+        <div>
+          <h4>Share this song</h4>
+          <p>The link carries this song’s details. Anyone with it can open Song Starter and choose to add the song.</p>
+        </div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Close song sharing">×</button>
+      </div>
+      <div className="song-share-qr">
+        {qrCode
+          ? <img src={qrCode} alt={`QR code to share ${song.title}`} width="240" height="240" />
+          : <p role={qrError ? "alert" : "status"}>{qrError ?? "Creating QR code…"}</p>}
+      </div>
+      <label className="song-share-link">
+        <span className="field-label">Song link</span>
+        <input ref={linkInput} type="text" readOnly value={shareUrl} onFocus={(event) => event.currentTarget.select()} />
+      </label>
+      <div className="song-share-actions">
+        <button type="button" className="button button-outline" onClick={() => void copyLink()}>Copy link</button>
+        {message && <span role="status">{message}</span>}
+      </div>
+      <p className="song-share-note">The song’s own pitch adjustment is included. Your overall pitch setting is not shared.</p>
+    </div>
   );
 }
 
@@ -812,7 +1078,7 @@ function EventManager({
 }
 
 function AboutPage() {
-  const websiteUrl = "https://newspire.github.io/songstarter/";
+  const websiteUrl = WEBSITE_URL;
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
 
@@ -869,9 +1135,188 @@ function AboutPage() {
   );
 }
 
+function BackupRestore({
+  data,
+  onRestore
+}: {
+  data: AppData;
+  onRestore: (backupData: AppData, mode: RestoreMode) => void;
+}) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [restoreMode, setRestoreMode] = useState<RestoreMode>("replace");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function downloadBackup() {
+    setError(null);
+    setStatus(null);
+    try {
+      const backup: SongStarterBackup = {
+        format: BACKUP_FORMAT,
+        version: BACKUP_VERSION,
+        createdAt: new Date().toISOString(),
+        data
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `song-starter-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus("Backup downloaded.");
+    } catch {
+      setError("The backup file could not be created. Please try again.");
+    }
+  }
+
+  async function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+
+    setError(null);
+    setStatus(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setError("This file could not be read as a Song Starter backup.");
+      return;
+    }
+
+    let backup: SongStarterBackup | null = null;
+    try {
+      if (isSongStarterBackup(parsed)) backup = parsed;
+    } catch {
+      backup = null;
+    }
+    if (!backup) {
+      setError("This is not a valid Song Starter backup or it uses an unsupported version. Your current data was not changed.");
+      return;
+    }
+
+    const confirmation = restoreMode === "replace"
+      ? "Replace all current songs, events, and semitone settings with this backup?"
+      : "Merge this backup? Matching songs and events and the overall semitone setting will be updated; items only on this device will be kept.";
+    if (!window.confirm(confirmation)) return;
+
+    try {
+      onRestore(backup.data, restoreMode);
+      setStatus(restoreMode === "replace" ? "Backup restored." : "Backup merged.");
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : "The backup could not be saved on this device.");
+    }
+  }
+
+  return (
+    <section className="backup-card" aria-labelledby="backup-title">
+      <div>
+        <p className="eyebrow">YOUR DATA</p>
+        <h3 id="backup-title">Backup and restore</h3>
+        <p className="backup-description">
+          Save or restore your songs, events, note spellings, and song and overall semitone adjustments.
+        </p>
+      </div>
+      <fieldset className="restore-options">
+        <legend>When importing a backup</legend>
+        <label className="restore-option">
+          <input
+            type="radio"
+            name="backup-restore-mode"
+            value="replace"
+            checked={restoreMode === "replace"}
+            onChange={() => setRestoreMode("replace")}
+          />
+          <span>
+            <strong>Replace current data</strong>
+            <small>Use only the songs, events, and settings in the backup.</small>
+          </span>
+        </label>
+        <label className="restore-option">
+          <input
+            type="radio"
+            name="backup-restore-mode"
+            value="merge"
+            checked={restoreMode === "merge"}
+            onChange={() => setRestoreMode("merge")}
+          />
+          <span>
+            <strong>Merge with current data</strong>
+            <small>Update matching items, keep device-only items, and use the backup’s overall semitone setting.</small>
+          </span>
+        </label>
+      </fieldset>
+      <div className="backup-actions">
+        <button type="button" className="button button-outline" onClick={downloadBackup}>Download backup</button>
+        <button type="button" className="button button-muted" onClick={() => fileInput.current?.click()}>
+          Choose backup file
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".json,application/json"
+          onChange={(event) => void importBackup(event)}
+          hidden
+          aria-label="Choose a Song Starter backup file"
+        />
+      </div>
+      {status && <p className="backup-status" role="status">{status}</p>}
+      {error && <p className="backup-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
+function IncomingSongShareCard({
+  song,
+  error,
+  alreadyInLibrary,
+  onAdd,
+  onDismiss
+}: {
+  song: Song | null;
+  error: string | null;
+  alreadyInLibrary: boolean;
+  onAdd: () => void;
+  onDismiss: () => void;
+}) {
+  if (!song && !error) return null;
+  return (
+    <section className={`shared-song-card${error ? " shared-song-error" : ""}`} aria-labelledby="shared-song-title">
+      {song ? (
+        <>
+          <p className="eyebrow">SHARED SONG</p>
+          <h2 id="shared-song-title">{song.title}</h2>
+          <p className="shared-song-summary">
+            {song.tonic} {song.mode} · {VOICES.map((voice) => getSongNoteLabel(song, voice)).join(" · ")}
+          </p>
+          <p className="shared-song-note">The song’s pitch adjustment is included. Your overall pitch setting will stay unchanged.</p>
+          <div className="shared-song-actions">
+            {alreadyInLibrary
+              ? <span className="shared-song-existing" role="status">This song is already in your library.</span>
+              : <button type="button" className="button button-primary" onClick={onAdd}>Add to my songs</button>}
+            <button type="button" className="button button-muted" onClick={onDismiss}>Not now</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="eyebrow">SHARED SONG</p>
+          <p className="shared-song-error-message" id="shared-song-title" role="alert">{error}</p>
+          <button type="button" className="button button-muted" onClick={onDismiss}>Close</button>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function App() {
   const [initialData] = useState(readStoredData);
   const [data, setData] = useState<AppData>(initialData.data);
+  const [incomingShare, setIncomingShare] = useState<IncomingSongShare>(readIncomingSongShare);
   const [storageError, setStorageError] = useState(initialData.error);
   const [storageBlocked, setStorageBlocked] = useState(Boolean(initialData.error));
   const [needsReset, setNeedsReset] = useState(Boolean(initialData.error));
@@ -891,6 +1336,12 @@ export default function App() {
       setStorageError("This device could not save your changes. Check the browser’s available storage and try again.");
     }
   }, [data, storageBlocked]);
+
+  useEffect(() => {
+    const handleHashChange = () => setIncomingShare(readIncomingSongShare());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   useEffect(() => {
     const handleInstall = (event: Event) => {
@@ -986,6 +1437,34 @@ export default function App() {
     }
   }
 
+  function restoreAppData(backupData: AppData, mode: RestoreMode) {
+    const restoredData = mode === "replace" ? backupData : mergeAppData(data, backupData);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredData));
+    } catch {
+      throw new Error("The backup could not be saved on this device. Your current data was left unchanged.");
+    }
+    setData(restoredData);
+    setStorageBlocked(false);
+    setNeedsReset(false);
+    setStorageError(null);
+  }
+
+  function dismissIncomingShare() {
+    setIncomingShare({ song: null, error: null });
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+  }
+
+  function addIncomingSong() {
+    const song = incomingShare.song;
+    if (!song || data.songs.some((item) => item.id === song.id)) return;
+    setData((current) => current.songs.some((item) => item.id === song.id)
+      ? current
+      : { ...current, songs: [...current.songs, song] });
+    setTab("songs");
+    dismissIncomingShare();
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -1022,6 +1501,13 @@ export default function App() {
       {playbackError && <div className="storage-alert playback-alert" role="alert">{playbackError}</div>}
 
       <main className="main-content">
+        <IncomingSongShareCard
+          song={incomingShare.song}
+          error={incomingShare.error}
+          alreadyInLibrary={incomingShare.song !== null && data.songs.some((song) => song.id === incomingShare.song?.id)}
+          onAdd={addIncomingSong}
+          onDismiss={dismissIncomingShare}
+        />
         <nav className="main-tabs" aria-label="Main sections">
           <button type="button" className={tab === "songs" ? "active" : ""} onClick={() => { setTab("songs"); setEditingSong(undefined); }}>
             <span aria-hidden="true">♫</span> Songs <span className="tab-count">{data.songs.length}</span>
@@ -1080,7 +1566,12 @@ export default function App() {
           />
         )}
 
-        {tab === "about" && <AboutPage />}
+        {tab === "about" && (
+          <>
+            <AboutPage />
+            <BackupRestore data={data} onRestore={restoreAppData} />
+          </>
+        )}
       </main>
       <footer className="app-footer">
         <span>Saved on this device</span>

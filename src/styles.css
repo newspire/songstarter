@@ -270,6 +270,148 @@ summary:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.backup-card {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.backup-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.backup-description {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.restore-options {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.restore-options legend {
+  margin-bottom: 9px;
+  color: #34443d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.restore-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.restore-option input {
+  margin: 3px 0 0;
+  accent-color: var(--green);
+}
+
+.restore-option span {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.restore-option small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.backup-status,
+.backup-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.backup-status {
+  color: var(--green-dark);
+}
+
+.backup-error {
+  color: #a33d35;
+}
+
+.shared-song-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid #cddbd1;
+  border-radius: 16px;
+  background: #f4f8f2;
+  box-shadow: var(--shadow);
+}
+
+.shared-song-card .eyebrow {
+  margin: 0;
+}
+
+.shared-song-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 21px;
+  overflow-wrap: anywhere;
+}
+
+.shared-song-summary,
+.shared-song-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shared-song-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.shared-song-existing {
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shared-song-error {
+  border-color: #e8c8c1;
+  background: #fff8f6;
+}
+
+.shared-song-error-message {
+  margin: 0;
+  color: #a33d35;
+  font-size: 12px;
+}
+
 .about-details {
   display: grid;
   align-content: start;
@@ -566,6 +708,117 @@ summary:focus-visible {
   border-top: 1px solid #efeee8;
   color: var(--muted);
   font-size: 11px;
+}
+
+.song-library-top .card-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.song-share-panel {
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  margin-top: 13px;
+  padding: 16px;
+  border-top: 1px solid #efeee8;
+  border-radius: 12px;
+  background: #f8faf6;
+}
+
+.song-share-heading {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.song-share-heading h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.song-share-heading p,
+.song-share-note {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.song-share-panel .icon-button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+}
+
+.song-share-qr {
+  display: grid;
+  width: 256px;
+  min-height: 256px;
+  max-width: 100%;
+  place-items: center;
+  border: 1px solid #ecece4;
+  border-radius: 13px;
+  background: #fffefa;
+}
+
+.song-share-qr img {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+}
+
+.song-share-qr p {
+  margin: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.song-share-link {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  text-align: left;
+}
+
+.song-share-link .field-label {
+  margin: 0;
+}
+
+.song-share-link input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #dcded6;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.song-share-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.song-share-actions span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.song-share-note {
+  margin: 0;
+  text-align: center;
 }
 
 .library-playback-panel {
@@ -1302,6 +1555,10 @@ summary:focus-visible {
   .about-card {
     grid-template-columns: 1fr;
     gap: 24px;
+    padding: 19px;
+  }
+
+  .backup-card {
     padding: 19px;
   }
 
